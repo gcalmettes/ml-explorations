@@ -1,2 +1,2 @@
 # ml-explorations
-Playing with ML algorithms to better understand how they work
+Playing with ML algorithms in Python to better understand how they work
