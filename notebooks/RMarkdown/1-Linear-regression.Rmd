@@ -468,8 +468,9 @@ print(pd.DataFrame(descentList[0], columns=["theta0", "theta1"]).head())
 
 print(f"""
 <script>
+  var mu = {mu}
+  var sigma = {sig}
   var data = {data[["price", "sqft"]].to_json(orient="records")}
-  var scalingCoef = {{mu: {mu}, sig: {sig}}}
   var gradientSteps = {pd.DataFrame(descentList[0], columns=["theta0", "theta1"]).to_json(orient="records")}
 </script>
 """)
@@ -489,8 +490,8 @@ print(f"""
 // unscale the theta coefs (they have been obtained with feature normalization)
 gradientSteps = gradientSteps.map(d => {
   var {theta0, theta1} = d
-  theta0 = theta0-(theta1*scalingCoef.mu)/scalingCoef.sig
-  theta1 = theta1/scalingCoef.sig
+  theta0 = theta0-(theta1*mu/sigma)
+  theta1 = theta1/sigma
   return {theta0: theta0, theta1: theta1}
 })
 // update history slider 
