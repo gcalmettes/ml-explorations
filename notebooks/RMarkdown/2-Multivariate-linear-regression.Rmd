@@ -1,0 +1,372 @@
+---
+title: "Linear-regression"
+author: "Guillaume Calmettes"
+date: "8/4/2018"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    collapsed: false
+    number_sections: true
+    theme: cosmo
+    df_print: kable
+  pdf_document: default
+---
+
+If we look at the dataset we used for the univariate linear case, for each house we have in fact a lot of features, but for the moment we just used their size as predictor of the price.
+
+What if instead of just wanting to predict the price of the houses by just looking at the sizes, we wanted to also include other features, like the number of bedrooms, etc ...? Could that help increase our prediction accuracy ?
+
+Since we will include more features, our regression model will be defined as the general form (with $x_0=1$):
+
+$$y=\theta_0\times x_0 +\theta_1\times x_1 +... + \theta_n\times x_n$$
+
+# Cost and gradient descent functions
+
+We can use the exact same gradient descent and cost functions than before, as the way we defined it allows to use any number of features.
+
+```{python}
+import numpy as np
+# For correctly shaped theta, features and trueValues matrices, we can define the cost function as
+def computeCost(theta, features, trueValues):
+    predictions = np.dot(features, theta) # this is a (number of features x number of Theta vectors) matrix
+    error = (predictions-trueValues)**2 # if you're inputing a matrice, this won't perform an element-wise square, use np.power instead
+    return np.sum(error, axis=0)/(2*features.shape[0])
+```
+
+
+```{python}
+def gradientDescent(startingTheta, features, trueValues, alpha=0.1, maxIterations=1000):    
+    # number of data in training set
+    m = np.array(features).shape[0]
+    
+    # We'll compare the theta vector to the next iteration to check convergence
+    newTheta = startingTheta
+    theta = np.ones_like(newTheta)
+    
+    i = 0 # we are setting up a counter to limit max number of iterations if algorithm doesn't converge
+    while (newTheta!=theta).all():
+        theta = newTheta
+        prediction = np.dot(features, theta)
+        # derivative for each theta
+        derivative = (alpha/m)*np.sum((prediction - trueValues)*features, axis=0)[:, np.newaxis]
+        newTheta = newTheta - derivative
+        # in case there is no convergence
+        i+=1
+        if i>=maxIterations:
+            break
+        yield(np.ravel(newTheta))
+```
+
+
+```{python}
+def rmse(actual, prediction):
+    n = len(prediction)
+    return np.sqrt(np.sum(np.power(prediction - actual, 2))/n)
+```
+
+
+# Applying multivariate linear regression on the house dataset
+
+Alright, we have the functions ready, let's get some data and build a linear model to predict the price of houses based on their size.
+We'll keep only the data that have 
+
+
+```{python}
+import pandas as pd
+
+dataHouses = pd.read_csv("../data/2017-05-12_141127.csv")
+
+```
+
+```{r, echo=F, message = F}
+library(reticulate) # so r can talk with python
+library(knitr)
+library(magrittr) # for the pipe operator
+library(kableExtra)
+
+py$dataHouses %>% kable(digits = 3,
+            row.names = T,
+            caption = "Santa Monica - House dataset (Zillow - 05/12/2017)"
+  ) %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed","responsive"),
+                    font_size = 12
+  ) %>% scroll_box(width = "100%", height = "300px")
+  
+```
+```
+
+```{python}
+import altair as alt
+
+houses = alt.Chart(dataHouses).mark_circle().encode(
+    alt.Color('bathrooms:Q',
+        scale=alt.Scale(scheme='viridis')),
+    x='sqft:Q',
+    y='price:Q',
+    size='bedrooms',
+    tooltip=['price', 'sqft', 'bedrooms', 'bathrooms']
+    ).configure_mark(opacity=0.7).interactive()
+```
+
+<div id="altairHouses" width='100%'></div>
+
+```{python echo=FALSE, results="asis"}
+
+def renderAltair(chart, divID, importVega=True):
+  vegaImportString = ""
+  if importVega:
+    vegaImportString = '<script src="https://cdn.jsdelivr.net/npm/vega@3"></script><script src="https://cdn.jsdelivr.net/npm/vega-lite@2"></script><script src="https://cdn.jsdelivr.net/npm/vega-embed@3"></script>'
+  
+  print(f"""{vegaImportString}
+<script> var spec = {chart.to_json()};
+var opt = {{'renderer': 'canvas', 'actions':false}};
+vegaEmbed('#{divID}', spec, opt);
+</script>""")
+    
+renderAltair(houses, "altairHouses")
+
+```
+
+
+## Features scaling
+
+Like we did before, we'll normalize our features
+
+```{python}
+featuresOfInterest = ["sqft", "bedrooms", "bathrooms"]
+
+filteredData = dataHouses[np.concatenate([["price"], featuresOfInterest])].dropna()
+normalizedFeatures = (filteredData[featuresOfInterest]-filteredData[featuresOfInterest].mean())/filteredData[featuresOfInterest].std()
+```
+
+
+```{r echo=F}
+py$normalizedFeatures %>% kable(digits = 3,
+            row.names = T,
+            caption = "Normalized features"
+  ) %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed","responsive"),
+                    font_size = 12
+  ) %>% scroll_box(width = "100%", height = "300px")
+```
+
+## Gradient descent for multivariate regression
+
+Alright, let's run gradient descent:
+
+```{python}
+# reshaping features and trueValues vectors
+features = np.hstack([np.ones(len(normalizedFeatures))[:, np.newaxis], normalizedFeatures])
+trueValues = filteredData.price.values[:, np.newaxis]
+
+# Initial theta values we'll start iterating from. We now have 3 features, so must be size 4
+initialTheta = np.random.rand(features.shape[1])[:, np.newaxis]
+
+# we'll run gradient descent with different alpha rates
+alphaList = [0.1, 0.3, 0.5]
+
+gdList = [gradientDescent(initialTheta, features, trueValues, alpha=i, maxIterations=1000) for i in alphaList]
+descentList = [np.vstack([initialTheta.transpose(), np.vstack(list(gd))]) for gd in gdList]
+```
+
+
+```{python}
+import matplotlib.pyplot as plt
+plt.style.use('ggplot')
+fig,ax = plt.subplots()
+
+n = 30
+for i in range(len(alphaList)):
+    theta = descentList[i].transpose()
+    ax.plot(np.ravel(computeCost(theta, features, trueValues)), label=r"$\alpha$" f"={alphaList[i]}")
+ax.set_xlim(0, n)
+ax.set_ylim(0, 0.8e13)
+ax.set_xlabel("Iterations")
+ax.set_ylabel("Cost")
+fig.suptitle(f"Cost over the first {n} iterations of gradient descent")
+fig.legend();
+plt.show()
+```
+
+## Model accuracy
+
+Let's see how the $RMSE$ changed with those added features. 
+
+```{python}
+# let's get the theta obtained with alph=0.3
+fittedTheta = descentList[1][-1][:, np.newaxis]
+
+predictions = features@fittedTheta
+
+print(f"RMSE: {rmse(trueValues, predictions):.2f}")
+```
+
+Well, by adding the number of bathrooms and bedrooms as features in addition of the size, it seems that we did improved a bit our predictions as the $RMSE$ is a bit smaller now.
+
+We can check the predicted price for each house compared to the true price.
+
+```{python}
+
+housePricePredictions = filteredData.loc[:, ["price"]].assign(predicted= lambda x: features@fittedTheta)
+housePricePredictions["difference"] = housePricePredictions.price-housePricePredictions.predicted
+
+```
+
+
+```{r echo=F}
+py$housePricePredictions %>% kable(digits = 3,
+            row.names = T,
+            caption = "Predicted vs True price"
+  ) %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed","responsive"),
+                    font_size = 12
+  ) %>% scroll_box(width = "100%", height = "300px")
+```
+
+
+```{python}
+import altair as alt
+
+housesPredChart = alt.Chart(housePricePredictions).mark_circle().encode(
+    x='price',
+    y='predicted',
+    size='difference',
+    tooltip = alt.Tooltip(['price:Q', 'predicted:Q', 'difference:Q'], format= "s")
+    ).configure_mark(opacity=0.7).interactive()
+```
+
+<div id="altairHousesPrediction" width='100%'></div>
+
+```{python echo=FALSE, results="asis"}
+    
+renderAltair(housesPredChart, "altairHousesPrediction")
+
+```
+
+And that's what the residual plot looks like
+
+```{python}
+fig,ax = plt.subplots()
+
+ax.plot(housePricePredictions.difference, "o", alpha=0.6)
+ax.set_ylabel("True - Predicted price ($)")
+ax.set_xlabel("Individual houses")
+
+plt.show()
+```
+
+
+## Adding even more features with hotshot encoding
+
+Let's try to improve those prediction by adding the zip code, encoded as hotshot.
+
+```{python}
+dataEncoded = dataHouses[np.concatenate([["price", "zip"], featuresOfInterest])].dropna().assign(zip90401 = lambda x: (x.zip==90401).astype(int))
+dataEncoded = dataEncoded.assign(zip90402 = lambda x: (x.zip==90402).astype(int))
+dataEncoded = dataEncoded.assign(zip90403 = lambda x: (x.zip==90403).astype(int))
+dataEncoded = dataEncoded.assign(zip90404 = lambda x: (x.zip==90404).astype(int))
+dataEncoded = dataEncoded.assign(zip90405 = lambda x: (x.zip==90405).astype(int))
+dataEncoded.loc[:, featuresOfInterest] = (dataEncoded.loc[:, featuresOfInterest]-dataEncoded.loc[:, featuresOfInterest].mean())/dataEncoded.loc[:, featuresOfInterest].std()
+```
+
+```{r echo=F}
+py$dataEncoded %>% kable(digits = 3,
+            row.names = T,
+            caption = "Features list"
+  ) %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed","responsive"),
+                    font_size = 12
+  ) %>% scroll_box(width = "100%", height = "300px")
+```
+
+And let's run gradient descent again and see how this affected our predictions.
+
+```{python}
+# features now also includes number of beds and number of bathrooms
+features = np.hstack([np.ones(len(dataEncoded))[:, np.newaxis], dataEncoded.loc[:, "sqft":].values])
+trueValues = dataEncoded.price.values[:, np.newaxis]
+
+# Initial theta values we'll start iterating from. We now have 3 features, so must be size 4
+initialTheta = np.random.rand(features.shape[1])[:, np.newaxis]
+
+# we'll run gradient descent with different alpha rates
+alphaList = [0.005, 0.01, 0.05]
+
+gdList = [gradientDescent(initialTheta, features, trueValues, alpha=i, maxIterations=1000) for i in alphaList]
+descentList = [np.vstack([initialTheta.transpose(), np.vstack(list(gd))]) for gd in gdList]
+```
+
+```{python}
+fig,ax = plt.subplots()
+
+n = 400
+for i in range(len(alphaList)):
+    theta = descentList[i].transpose()
+    ax.plot(np.ravel(computeCost(theta, features, trueValues)), label=r"$\alpha$" f"={alphaList[i]}")
+ax.set_xlim(0, n)
+ax.set_ylim(0, 0.8e13)
+ax.set_xlabel("Iterations")
+ax.set_ylabel("Cost")
+fig.suptitle(f"Cost over the first {n} iterations of gradient descent")
+fig.legend();
+plt.show()
+```
+
+
+```{python}
+# let's get the theta obtained with alph=0.2
+fittedTheta = descentList[2][-1][:, np.newaxis]
+
+predictions = features@fittedTheta
+
+print(f"RMSE: {rmse(trueValues, predictions):2f}")
+```
+
+The $RMSE$ is even smaller now.
+
+```{python}
+
+housePricePredictions2 = dataEncoded.loc[:, ["price"]].assign(predicted= lambda x: features@fittedTheta)
+housePricePredictions2["difference"] = housePricePredictions2.price-housePricePredictions.predicted
+
+```
+
+```{r echo=F}
+py$housePricePredictions2 %>% kable(digits = 3,
+            row.names = T,
+            caption = "Features list"
+  ) %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed","responsive"),
+                    font_size = 12
+  ) %>% scroll_box(width = "100%", height = "300px")
+```
+
+```{python}
+import altair as alt
+
+housesPredChart2 = alt.Chart(housePricePredictions2).mark_circle().encode(
+    x='price',
+    y='predicted',
+    size='difference',
+    tooltip = alt.Tooltip(['price:Q', 'predicted:Q', 'difference:Q'], format= "s")
+    ).configure_mark(opacity=0.7).interactive()
+```
+
+<div id="altairHousesPrediction2" width='100%'></div>
+
+```{python echo=FALSE, results="asis"}
+    
+renderAltair(housesPredChart2, "altairHousesPrediction2")
+
+```
+
+```{python}
+fig,ax = plt.subplots()
+
+ax.plot(housePricePredictions2.difference, "o", alpha=0.6)
+ax.set_ylabel("True - Predicted price ($)")
+ax.set_xlabel("Individual houses")
+
+plt.show()
+```
+
+
+# Comparing with `Scikit-Learn`
+
