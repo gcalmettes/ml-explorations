@@ -203,15 +203,6 @@ Let's visualize the relationship between size and price of this dataset.
 data = dataHouses[(pd.isna(dataHouses.price)==False) & (pd.isna(dataHouses.sqft)==False)]
 
 print(f"Size of the dataset: {len(dataHouses)} (original), {len(data)} (filtered for NAN on $|sqft)")
-
-#import matplotlib.pyplot as plt
-#plt.style.use('ggplot')
-#fig,ax = plt.subplots(figsize=(5,4))
-#ax.scatter(data.sqft, data.price, alpha=0.6, edgecolors="k")
-#ax.set_xlabel("Size (sqft)")
-#ax.set_ylabel("Price ($)")
-#plt.tight_layout()
-#plt.show()
 ```
 
 ```{python}
@@ -227,7 +218,7 @@ houses = alt.Chart(data).mark_circle().encode(
     ).configure_mark(opacity=0.7).interactive()
 ```
 
-<div id="altairHouses"></div>
+<div id="altairHouses" width='100%'></div>
 
 ```{python echo=FALSE, results="asis"}
 
@@ -272,8 +263,10 @@ THETA0, THETA1 = np.meshgrid(intercept, slope)
 
 
 # Feature normalization
-SIZE = ((data.sqft - data.sqft.mean())/data.sqft.std()).values
-TRUEVALUES = data.price.values
+mu = data.sqft.mean() # mean
+sig = data.sqft.std() # std
+SIZE = ((data.sqft - mu)/sig).values
+TRUEVALUES = data.price.values # no normalization of target
 
 # reshaping features and trueValues vectors
 features = SIZE[:, np.newaxis]
@@ -463,6 +456,124 @@ fig.suptitle("Cost over the first 15 iterations of gradient descent")
 fig.legend();
 plt.show()
 ```
+
+We could visualize how our linear regression evolves after each iteration.
+
+```{python}
+print(pd.DataFrame(descentList[0], columns=["theta0", "theta1"]).head())
+```
+
+
+```{python echo=F, results="asis"}
+
+print(f"""
+<script>
+  var data = {data[["price", "sqft"]].to_json(orient="records")}
+  var scalingCoef = {{mu: {mu}, sig: {sig}}}
+  var gradientSteps = {pd.DataFrame(descentList[0], columns=["theta0", "theta1"]).to_json(orient="records")}
+</script>
+""")
+
+```
+
+<script src="https://d3js.org/d3.v5.min.js"></script>
+
+<div id="gradientSteps"></div>
+<div class='history'>
+<label for="history-slider">History of gradient descent (alpha = 0.1) / </label>
+<label id="iteration" for="history-slider">Iteration 0</label>
+<input id="history-slider" type="range" min="0" max="10" step="1" value="0"/>
+</div>
+
+<script>
+// unscale the theta coefs (they have been obtained with feature normalization)
+gradientSteps = gradientSteps.map(d => {
+  var {theta0, theta1} = d
+  theta0 = theta0-(theta1*scalingCoef.mu)/scalingCoef.sig
+  theta1 = theta1/scalingCoef.sig
+  return {theta0: theta0, theta1: theta1}
+})
+// update history slider 
+var historySlider = d3.select('#history-slider');
+historySlider.attr('max', gradientSteps.length-1)
+historySlider.attr('value', gradientSteps.length-1)
+historySlider.style('width', Math.min(gradientSteps.length, 500) + "px")
+historySlider
+	.on('input', function() {
+		var params = gradientSteps[this.value];
+		iteration.innerText = `Iteration ${this.value}`
+		updateRegressionLine(svg, params)
+	})
+
+var iterationN = d3.select('#iteration')
+iteration.innerText = `Iteration ${gradientSteps.length-1}`
+
+var margin = {top: 20, right: 20, bottom: 60, left: 60}
+var width = 500 - margin.right - margin.left , 
+    height = 350 - margin.top - margin.bottom
+    
+var svg = d3.select("#gradientSteps").append("svg")
+    .attr("width", width + margin.right + margin.left)
+    .attr("height", height + margin.top + margin.bottom)
+  .append("g")
+    .attr("transform", `translate(${margin.left}, ${margin.top})`)
+console.log(svg)
+var xExtent = d3.extent(data, d => d.sqft)
+var xScale = d3.scaleLinear()
+  .domain(xExtent)
+  .range([0, width])
+var yScale = d3.scaleLinear()
+  .domain(d3.extent(data, d => d.price))
+  .range([height, 0])
+
+svg.selectAll(".dot").data(data).enter()
+  .append("circle")
+  .attr("cx", d => xScale(d.sqft))
+  .attr("cy", d => yScale(d.price))
+  .attr("r", 5)
+  .attr("stroke", "gray")
+  .attr("fill", "none")
+  
+svg.append("g")
+  .attr("transform", `translate(${0}, ${height})`)
+  .call(d3.axisBottom(xScale))
+svg.append("g")
+  .attr("transform", `translate(${0}, ${0})`)
+  .call(d3.axisLeft(yScale).tickFormat(d3.format("($.2s")))
+svg.append('text')
+  .attr("x", width/2)
+  .attr("y", height + margin.bottom/1.5)
+  .text("Size (sqft)")
+svg.append('text')
+  .attr("transform", `translate(${-margin.left/1.2}, ${height/2}) rotate(-90)`)
+  .text("Price ($)")
+
+updateRegressionLine(svg, gradientSteps[gradientSteps.length-1])
+
+function updateRegressionLine(svg, params) {
+  var {theta0, theta1} = params
+  var yData = xExtent.map(d => theta0 + theta1*d)
+  
+  var line = svg.selectAll(".regLine")
+    .data([yData])
+    
+  var lineEnter = line.enter()
+    .append("line")
+      .attr('class', "regLine")
+      .attr("x1", xScale(xExtent[0]))
+      .attr("x2", xScale(xExtent[1]))
+      .attr("y1", d => yScale(d[0]))
+      .attr("y2", d => yScale(d[1]))
+      .style("stroke", "red")
+  line.merge(lineEnter)
+      .attr("x1", xScale(xExtent[0]))
+      .attr("x2", xScale(xExtent[1]))
+      .attr("y1", d => yScale(d[0]))
+      .attr("y2", d => yScale(d[1]))
+    
+}
+
+</script>
 
 ## Accuracy of our model
 
