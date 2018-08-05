@@ -1,0 +1,501 @@
+---
+title: "Linear-regression"
+author: "Guillaume Calmettes"
+date: "8/4/2018"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    toc_float: true
+    collapsed: false
+    number_sections: true
+    theme: cosmo
+    df_print: kable
+  pdf_document: default
+---
+
+
+# General linear regression model
+
+The general equation for linear regression is of the form:  
+$$y=\theta_0 +\theta_1\times x_1 +... + \theta_n\times x_n$$
+
+By defining a variable $x_0=1$, we can rewrite this equation as:
+$$y=\theta_0\times x_0 +\theta_1\times x_1 +... + \theta_n\times x_n$$
+
+Let's consider a very simple model $y=\theta_0 +\theta_1\times x_1$ to predict the price of a house based on its size. This model could be described by a line, caracterized by an intercept ($\theta_0$) and a slope ($\theta_1$). If $\theta_0$ and $\theta_1$ are known, we could use this model to predict the price of a house based on its size (called a __feature__).
+
+# Coding implementation of the model
+
+## Naive function
+
+Let's define a simple Python function to do just that:
+
+```{python}
+import numpy as np
+
+def predict(theta, features):
+    features = np.concatenate([[1], features]) # add x_0 = 1
+    return np.sum([t*f for t,f in zip(theta, features)])
+```
+
+Now, for any pair of $\theta$ parameters, we can predict the price of any house based on its size:
+
+```{python}
+# let's assign arbitrary values to the parameters of the our linear model
+b0, b1 = 3, 8
+theta = [b0, b1]
+# the value for which we want to predict the value
+size = 30189
+features = [size]
+
+print(f"The predicted price for a house of size {features[0]}sqft is ${predict(theta, features)}")
+```
+
+However, we can certainly do better. While this function correctly predicts the price of houses based on their size, it is for-loop-based and so would not probably scale up very well as we increase the number of features or if we have to deal with a bigger dataset.
+
+## Using linear algebra
+
+Instead of using a function, we could simply make use of linear algebra and matrices multiplication to calculate the predicted price. This will allow us to predict the house prices for different sets of $\theta$ and different training examples while avoiding a slow _for-loops_ constructs.
+
+> Remember that for two matrices $A$ and $B$ of respective shapes (_M x N_) and (_N x K_) (note the similar dimension N), their multiplication (dot product) $A\cdot B$ will produce a matrix $C$ with dimension (_M x K_).
+
+In our situation, we can use the dot product of our features vector by our theta vector (we need to make sure the sizes are in agreement) to predict the price of our houses. Using the `numpy` library we have several options:
+
+- `np.dot` if both vectors are `numpy` arrays. In this case we need to reshape our theta vector to be a (_2x1_) vector
+- as of Python 3.5, `numpy` supports infix matrix multiplication between `numpy` arrays using the `@` operator, this would be the same than using `numpy.matmul`.
+- convert both our vectors as matrices and use matrix multiplication using the `*` operator.
+
+**Note (1)**:
+`np.matmul` differs from `np.dot` in two important ways:
+
+- Multiplication by scalars is not allowed.
+- Stacks of matrices are broadcasted together as if the matrices were elements.
+
+For `np.matmul`: If either argument is N-D, N > 2, it is treated as a stack of matrices residing in the last two indexes and broadcasted accordingly.
+
+For `np.dot`: For 2D arrays it is equivalent to matrix multiplication, and for 1D arrays to inner product of vectors (without complex conjugation). For N dimensions it is a sum product over the last axis of A and the second-to-last of B.
+
+**Note (2)**:
+We also have a choice to which data container to use to store our parameters ($\theta$) and features ($x_n$) vectors, arrays or matrices.
+
+Let's see how do all the above options look in practice:
+
+- **Working with numpy arrays**
+
+```{python}
+
+# Shaping our arrays (those two constructs are similar):
+theta = np.array([b0, b1]).reshape((2, 1))
+theta = np.array([b0, b1])[:, np.newaxis]
+
+features = np.array([1, size]) # note that we added x_0
+```
+
+```{python}
+print(f"Dot product: predicted price ${np.dot(features, theta)}")
+print(f"np.matmul: predicted price ${np.matmul(features, theta)}")
+print(f"'@' operator: predicted price ${features@theta}")
+```
+
+- **Working with numpy matrices**
+
+```{python}
+# Again, several syntaxic choices possible
+theta = np.matrix([[b0], [b1]])
+theta = np.matrix([b0, b1]).transpose()
+
+features = np.matrix([1, size])
+```
+
+```{python}
+print(f"Matrix multiplication: predicted price ${features*theta}")
+```
+
+> An advantage of using multidimensional `numpy` __arrays__ over `numpy` __matrices__ is that we'll be able to perform both dot product and element-wise products without calling special functions. So all the code will make use of arrays from now on to make matrices.
+
+## Predicting the price of different houses for different $\theta$  parameters
+
+Great, we have some linear algebra working in Python. Now we can efficiently compute the predictions for any number of different sets of $\theta$ and different training examples (still, only one feature in this case, the house size):
+
+```{python}
+# Let's get different houses sizes for which we want to predict the price 
+houseSizes = np.array([234104, 141016, 129534, 98852])
+# From them, let's make a proper (4x2) matrix, adding the x_0=1 to each example
+features = features = np.vstack([np.ones(len(houseSizes)), houseSizes]).transpose()
+# 3 different [intercept, slope] pairs, (2x3) matrix
+theta = np.array([[-40, 0.25], [200, 0.1], [-150, 0.4]]).transpose()
+
+print(features)
+print(theta)
+```
+
+```{python}
+# predictions for each house (rows), for each theta parameter pairs (columns)
+print(np.dot(features, theta))
+```
+
+# Cost function
+
+Alright, we now know how to use our model compute the predictions when the parameters ($\theta$ vector) are known. But how to compute the value of the $\theta$? If we have a dataset of house sizes and their corresponding prices, we might be able to fit our linear model to this dataset to get the $\theta$ parameters values (we are going to __train our model__).
+
+In order to do this, we need to define a cost function of the form:
+$J(\theta)=\frac{1}{2m}\sum_{i=1}^{m}(h_0(x^{(i)})-y^{(i)})^2$
+
+with $h_0(x)=\hat{y}$ being our predictive function (the one we worked with above): $h_0(x) = \sum_{j=0}^{n} \theta_i\times x_j$.
+
+- $m$ is the number of training data we have
+- $n$ is the polynomial degree for our regression (in our case, we are using a simple line so far, so $n=1$)
+- $y$ is the true value that we are trying to predict with our $h_0(x)$ function
+
+```{python}
+# For correctly shaped theta, features and trueValues matrices, we can define the cost function as
+def computeCost(theta, features, trueValues):
+    predictions = np.dot(features, theta) # this is a (number of features x number of Theta vectors) matrix
+    error = (predictions-trueValues)**2 # if you're inputing a matrice, this won't perform an element-wise square, use np.power instead
+    return np.sum(error, axis=0)/(2*features.shape[0])
+```
+
+
+```{python}
+# example  
+theta = np.array([2, 9])[:, np.newaxis]
+features = np.array([[1, 397263], [1, 567108]])
+trueValues = np.array([457145, 63083])[:, np.newaxis]
+print(computeCost(theta, features, trueValues))
+```
+
+
+# Applying linear regression on real data
+
+## The dataset
+
+Alright, we have the functions ready, let's get some data and build a linear model to predict the price of houses based on their size.
+
+**Note:** This dataset has been scrapped from Zillow, and contains information about the houses that were for sale in Santa Monica on 05/12/2017
+
+```{python}
+import pandas as pd
+dataHouses = pd.read_csv("../data/2017-05-12_141127.csv")
+```
+
+
+```{r, echo=F, message = F}
+library(reticulate) # so r can talk with python
+library(knitr)
+library(magrittr) # for the pipe operator
+library(kableExtra)
+
+py$dataHouses %>% kable(digits = 3,
+            row.names = T,
+            caption = "Santa Monica - House dataset (Zillow - 05/12/2017)"
+  ) %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed","responsive"),
+                    font_size = 12
+  ) %>% scroll_box(width = "100%", height = "300px")
+  
+```
+```
+
+Let's visualize the relationship between size and price of this dataset.
+
+```{python}
+# filter out houses that don't have at least Price and Size
+data = dataHouses[(pd.isna(dataHouses.price)==False) & (pd.isna(dataHouses.sqft)==False)]
+
+print(f"Size of the dataset: {len(dataHouses)} (original), {len(data)} (filtered for NAN on $|sqft)")
+
+#import matplotlib.pyplot as plt
+#plt.style.use('ggplot')
+#fig,ax = plt.subplots(figsize=(5,4))
+#ax.scatter(data.sqft, data.price, alpha=0.6, edgecolors="k")
+#ax.set_xlabel("Size (sqft)")
+#ax.set_ylabel("Price ($)")
+#plt.tight_layout()
+#plt.show()
+```
+
+```{python}
+import altair as alt
+
+houses = alt.Chart(data).mark_circle().encode(
+    alt.Color('bathrooms:Q',
+        scale=alt.Scale(scheme='viridis')),
+    x='sqft:Q',
+    y='price:Q',
+    size='bedrooms',
+    tooltip=['price', 'sqft', 'bedrooms', 'bathrooms']
+    ).configure_mark(opacity=0.7).interactive()
+```
+
+<div id="altairHouses"></div>
+
+```{python echo=FALSE, results="asis"}
+
+def renderAltair(chart, divID, importVega=True):
+  vegaImportString = ""
+  if importVega:
+    vegaImportString = '<script src="https://cdn.jsdelivr.net/npm/vega@3"></script><script src="https://cdn.jsdelivr.net/npm/vega-lite@2"></script><script src="https://cdn.jsdelivr.net/npm/vega-embed@3"></script>'
+  
+  print(f"""{vegaImportString}
+<script> var spec = {chart.to_json()};
+var opt = {{'renderer': 'canvas', 'actions':false}};
+vegaEmbed('#{divID}', spec, opt);
+</script>""")
+    
+renderAltair(houses, "altairHouses")
+
+```
+
+## Visualization of the cost on the ($\theta_0$, $\theta_1$) space
+
+We're dealing with a very simple linear model here, we only have one feature (the size of the house) to predict the price. So our model is basically a line defined by an intercept ($\theta_0$) and a slope ($\theta_1$).
+
+Let's see what the cost $J(\theta)$ that we can compute from the data in this dataset looks like over a space of $(\theta_0, \theta_1)$ values.
+
+Numpy provides `np.meshgrid` as a convenience to create a grid of parameter over which to compute functions. By using it, we will create grids of $\theta_0$ and $\theta_1$ parameters, so we need to modify the cost function so it can do the right computation using grids instead of vectors. We will work with vectors.
+
+
+**Feature scaling/normalization**
+
+To improve the algorithm performance, we will scale our features by substracting the mean and dividing by the standard deviation.
+
+First, let's create a meshgrid for our parameters using numpy:
+
+```{python}
+intercept = np.linspace(-10000, 5000000, 500) # range of values for the intercept we want to cover
+slope = np.linspace(-10000, 5000000, 500) # range of values for the slope we want to cover
+
+# let's create all the different (intercept, slope) pairs from those ranges of values
+# we can use np.meshgrid for that and then ravel the vectors and concatenate them into a proper theta matrix.
+# The THETA matrix will be a (2 x number of pairs) matrix
+THETA0, THETA1 = np.meshgrid(intercept, slope)
+
+
+# Feature normalization
+SIZE = ((data.sqft - data.sqft.mean())/data.sqft.std()).values
+TRUEVALUES = data.price.values
+
+# reshaping features and trueValues vectors
+features = SIZE[:, np.newaxis]
+trueValues = TRUEVALUES[:, np.newaxis]
+```
+
+This is what the matrices looks like right now:
+
+```{python echo=F}
+print(f"THETA0 shape: {THETA0.shape}\nTHETA1 shape: {THETA1.shape}\nfeatures shape: {features.shape}\ntrueValues shape: {trueValues.shape}")
+```
+
+Now we need to define some functions that can handle broadcasting
+
+```{python}
+# define new prediction function to work with vectors, return prediction from a line equation
+def computePrediction(theta0, theta1, features):
+    return theta0 + theta1*features
+
+# cost function that can handle meshgrids
+# uses broadcasting abilities of numpy.
+# CANNOT BE GENERALIZED TO MORE DIMENSIONS WITH THE CURRENT IMPLEMENTATION
+def costFuncGrid(theta, features, trueValues):
+    theta0, theta1 = theta
+    # add a dimension to theta0 and theta1 over which we will sum everything later
+    theta0 = theta0[:, np.newaxis]
+    theta1 = theta1[:, np.newaxis]
+    features = features*np.ones_like(theta1)
+    prediction = computePrediction(theta0, theta1, features)
+    return np.sum((prediction-trueValues)**2, axis=1)/(2*features.shape[1])
+
+costValueGrid = costFuncGrid([THETA0, THETA1], features, trueValues)
+```
+
+And now for the visualization
+
+```{python}
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+
+fig = plt.figure(figsize=(12, 4))
+ax1 = fig.add_subplot(1,2,1)
+ax2 = fig.add_subplot(122, projection='3d')
+fig.suptitle("Cost function")
+
+# 2D viz
+ax1.contour(THETA0, THETA1, costValueGrid, 80)
+ax1.set_xlabel(r"$\theta_0$ (intercept)")
+ax1.set_ylabel(r"$\theta_1$ (slope)")
+
+# 3D viz
+ax2.plot_surface(THETA0, THETA1, costValueGrid, cmap="viridis")
+ax2.set_xlabel(r"$\theta_0$ (intercept)")
+ax2.set_ylabel(r"$\theta_1$ (slope)");
+
+plt.tight_layout()
+
+plt.show()
+```
+
+## Gradient Descent algorithm for simple linear regression
+
+Alright, now that we have set up our cost function space and we've seen it's a convex function, let's use gradient descent to find the minimum.
+
+The Gradient Descent algorithm will iterate over the cost function space by checking each time which direction on this plane is the steepest down, and will update $\theta_0$ and $\theta_1$ accordingly to the $\alpha$ rate for which you wanted your algorithm to learn. Note that if $\alpha$ is too low, it will take a long time before reaching convergence, and if it is too high, then you'll go away form the minimum as you'll bounce on the "walls" of the convex plane (we'll visualize that too).
+
+For each $j=(0,1): \theta_j$, repeat until convergence:
+
+$\theta_j := \theta_j-\alpha\frac{\delta}{\delta\theta_j}J(\theta_j)$ 
+
+with $J(\theta_0, \theta_1)$ being the same cost function $J(\theta_j)=\frac{1}{2m}\sum_{i=1}^{m}(h_0(x^{(i)})-y^{(i)})^2$ that we used previously,
+
+and $j=(0,1): \frac{\delta}{\delta\theta_j}J(\theta_j)=\frac{1}{m}\sum_{i=1}^{i=m}(h_0(x^{(i)})-y^{(i)})\times x_j^{(i)}$ being the derivative of this cost function (remember that $x_0=1$).
+
+This is the derivative that we need to compute in the gradient descent algorithm.
+
+We'll make this function a generator so we can keep and analyze all the steps the algorithm went over:
+
+```{python}
+def gradientDescent(startingTheta, features, trueValues, alpha=0.1, maxIterations=1000):    
+    # number of data in training set
+    m = np.array(features).shape[0]
+    
+    # We'll compare the theta vector to the next iteration to check convergence
+    newTheta = startingTheta
+    theta = np.ones_like(newTheta)
+    
+    i = 0 # we are setting up a counter to limit max number of iterations if algorithm doesn't converge
+    while (newTheta!=theta).all():
+        theta = newTheta
+        prediction = np.dot(features, theta)
+        # derivative for each theta
+        derivative = (alpha/m)*np.sum((prediction - trueValues)*features, axis=0)[:, np.newaxis]
+        newTheta = newTheta - derivative
+        # in case there is no convergence
+        i+=1
+        if i>=maxIterations:
+            break
+        yield(np.ravel(newTheta))
+```
+
+Let's run gradient descent on our dataset! And let's experiment with different alpha rates.
+
+```{python}
+# Initial [intercept,slope] values we'll start iterating from
+initialTheta = np.array([1000000, 2500000])[:, np.newaxis]
+# reshaping features and trueValues vectors
+features = np.vstack([np.ones(len(SIZE)), (SIZE-SIZE.mean())/SIZE.std()]).transpose()
+trueValues = TRUEVALUES[:, np.newaxis]
+
+# we'll run gradient descent with different alpha rates
+alphaList = [0.1, 0.3, 0.5, 1.5, 2.1]
+
+gdList = [gradientDescent(initialTheta, features, trueValues, alpha=i) for i in alphaList]
+
+descentList = [np.vstack([initialTheta.transpose(), np.vstack(list(gd))]) for gd in gdList]
+```
+
+Great, everything ran smoothly, and we stored the steps for different $\alpha$ learning rate.
+
+Let's visualize how it looks on the cost function space that we computed previously.
+
+```{python}
+fig,axes = plt.subplots(ncols=len(alphaList), figsize=(18, 4))
+
+for i in range(len(alphaList)):
+    axes[i].contour(THETA0, THETA1, costValueGrid, 50)
+    axes[i].plot(descentList[i][:, 0], descentList[i][:, 1], "-x", color="red")
+    axes[i].set_title(r"Learning rate $\alpha$" f"={alphaList[i]}, iter={len(descentList[i])}")
+    
+# no convergence for alpha=2.1, let's rescale our graph
+axes[4].set_xlim(intercept.min(), intercept.max())
+axes[4].set_ylim(slope.min(), slope.max())
+
+plt.tight_layout()
+
+plt.show()
+```
+
+We see that for $\alpha=$, the learning rate is too high, and we bounce back and forth on the wall of the plane, getting farther and farther from the bottom of the bowl.
+
+Let's see that in 3D, for fun:
+
+```{python}
+fig,axes = plt.subplots(ncols=len(alphaList)-2, figsize=(18, 4), subplot_kw={"projection": '3d'})
+
+for i in range(len(alphaList)-2):
+    theta = descentList[i+2].transpose()
+    axes[i].set_title(r"Learning rate $\alpha$" f"={alphaList[i+2]}")
+    axes[i].plot_surface(THETA0, THETA1, costValueGrid, cmap="viridis")
+    axes[i].plot(np.ravel(descentList[i+2][:, 0]), np.ravel(descentList[i+2][:, 1]), np.ravel(computeCost(theta, features, trueValues)), "-o", color="red", alpha=0.5)
+    axes[i].set_xlim(intercept.min(), intercept.max())
+    axes[i].set_xlim(slope.min(), slope.max())
+    axes[i].set_zlim(0, costValueGrid.max())
+    axes[i].set_xlabel(r"$\theta_0$ (intercept)")
+    axes[i].set_ylabel(r"$\theta_1$ (slope)");
+
+plt.tight_layout()
+plt.show()
+```
+
+What is the cost of our function?
+```{python}
+costValues = [np.ravel(computeCost(theta.transpose(), features, trueValues)) for theta in descentList]
+costDataDf = pd.DataFrame(index=range(np.max([len(c) for c in costValues])), columns=[f"alpha {alpha}" for alpha in alphaList])
+for i,alpha in enumerate(alphaList):
+    theta = descentList[i].transpose()
+    costDataDf.loc[:len(costValues[i])-1, f"alpha {alpha}"] = np.ravel(computeCost(theta, features, trueValues))
+    
+#convert to long form data
+costDataDf["iteration"] = costDataDf.index
+costDataDf_Long = pd.melt(costDataDf, id_vars=['iteration'], value_vars=costDataDf.columns[:-1])
+```
+
+```{python}
+plt.style.use('ggplot')
+fig,ax = plt.subplots()
+
+for i in range(len(alphaList)):
+    theta = descentList[i].transpose()
+    ax.plot(np.ravel(computeCost(theta, features, trueValues)), label=r"$\alpha$" f"={alphaList[i]}")
+ax.set_xlim(0, 15)
+ax.set_ylim(0, 1e13)
+ax.set_xlabel("Iterations")
+ax.set_ylabel("Cost")
+fig.suptitle("Cost over the first 15 iterations of gradient descent")
+fig.legend();
+plt.show()
+```
+
+## Accuracy of our model
+
+Now that gradient descent has converged toward a minimum, we could predict the prices of the houses based on the sizes by using those $\theta$.
+
+We could then calculate the $RMSE$ to evaluate the accuracy of our model. Let's define a function for that:
+
+```{python}
+def rmse(actual, prediction):
+    n = len(prediction)
+    return np.sqrt(np.sum(np.power(prediction - actual, 2))/n)
+```
+
+
+```{python}
+# let's get the theta obtained with alph=0.2
+fittedTheta = descentList[2][-1][:, np.newaxis]
+
+# predicted prices for all the houses
+predictions = features@fittedTheta
+
+print(rmse(trueValues, predictions))
+```
+
+What does the residual plot look like?
+
+```{python}
+fig,ax = plt.subplots()
+
+ax.plot(trueValues-predictions, "o", alpha=0.6)
+ax.set_ylabel("True vs Predicted price ($)")
+ax.set_xlabel("Individual houses")
+
+plt.show()
+```
+
