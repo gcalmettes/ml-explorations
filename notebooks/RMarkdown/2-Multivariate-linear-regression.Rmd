@@ -255,7 +255,7 @@ plt.show()
 ```
 
 
-## Adding even more features with hotshot encoding
+## Adding even more features: One-hot encoding of the zip code
 
 Let's try to improve those prediction by adding the zip code, encoded as hotshot.
 
