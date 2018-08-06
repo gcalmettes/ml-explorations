@@ -370,3 +370,42 @@ plt.show()
 
 # Comparing with `Scikit-Learn`
 
+Of course, implementing linear regression with gradient descent was more of a fun exercice to better understand what's happening under the hood.
+Most of the ML algorithm are already implemented in dedicated libraries like `scikit-learn`.
+
+Let's see for example how the predictions we made compare to the ones obtained on the same dataset (and using the same features) with `scikit-learn`.
+
+
+```{python}
+from sklearn import linear_model
+
+x_train = dataEncoded.loc[:, "sqft":].values
+y_train = dataEncoded.loc[:, "price"].values
+
+ols = linear_model.LinearRegression()
+model = ols.fit(x_train, y_train)
+```
+
+```{python}
+predictionsCompared = dataEncoded.loc[:, ["price"]].assign(manual = lambda x: features@fittedTheta).assign(sklearn= lambda x: model.predict(dataEncoded.loc[:, "sqft":].values))
+```
+
+```{r echo=F}
+py$predictionsCompared %>% kable(digits = 3,
+            row.names = T,
+            caption = "Manual vs Scikit-Learn"
+  ) %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed","responsive"),
+                    font_size = 12
+  ) %>% scroll_box(width = "100%", height = "300px")
+```
+
+Pretty good! Sounds like we did a good job at implementing the algorithm!
+
+```{python}
+fig,ax = plt.subplots()
+ax.plot(model.predict(dataEncoded.loc[:, "sqft":].values), features@fittedTheta)
+ax.set_xlabel("Prediction by Scikit Learn LM")
+ax.set_ylabel("Prediction by coded implementation")
+plt.show()
+```
+
