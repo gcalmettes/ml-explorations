@@ -14,6 +14,11 @@ output:
   pdf_document: default
 ---
 
+```{r setup, include=FALSE}
+library("reticulate")
+use_condaenv("data-science", conda = "/Users/gcalmettes/miniconda3/bin/conda", required = TRUE)
+```
+
 If we look at the dataset we used for the univariate linear case, for each house we have in fact a lot of features, but for the moment we just used their size as predictor of the price.
 
 What if instead of just wanting to predict the price of the houses by just looking at the sizes, we wanted to also include other features, like the number of bedrooms, etc ...? Could that help increase our prediction accuracy ?
@@ -28,6 +33,7 @@ We can use the exact same gradient descent and cost functions than before, as th
 
 ```{python}
 import numpy as np
+
 # For correctly shaped theta, features and trueValues matrices, we can define the cost function as
 def computeCost(theta, features, trueValues):
     predictions = np.dot(features, theta) # this is a (number of features x number of Theta vectors) matrix

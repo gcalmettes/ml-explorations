@@ -14,6 +14,11 @@ output:
   pdf_document: default
 ---
 
+```{r setup, include=FALSE}
+library("reticulate")
+use_condaenv("data-science", conda = "/Users/gcalmettes/miniconda3/bin/conda", required = TRUE)
+```
+
 # General linear regression model
 
 The general equation for linear regression is of the form:  
